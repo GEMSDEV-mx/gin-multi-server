@@ -61,41 +61,16 @@ func (s *Server) MountEndpoint(method Method, path string, handler HandlerFuncti
 	log.Printf("[Server] Mounting endpoint: %s %s", method, path)
 	s.allowedMethods[method] = true // Track allowed methods dynamically
 	s.routes = append(s.routes, Route{Method: method, Path: path, Handler: handler})
-
-	if !s.lambda {
-		// Local server mode
-		s.router.Handle(string(method), path, func(c *gin.Context) {
-			ctx := context.Background()
-			body, _ := c.GetRawData()
-			query := c.Request.URL.Query()
-
-			queryParams := make(map[string]string)
-			for key := range query {
-				queryParams[key] = query.Get(key)
-			}
-
-			statusCode, response := serveHTTPHandler(ctx, handler, string(body), queryParams)
-			c.String(statusCode, response)
-		})
-	}
 }
 
 // Serve starts the server
-func (s *Server) Serve() {
+func (s *Server) Serve(port string) {
 	if s.lambda {
 		// Lambda mode: Start Lambda with a single handler
 		log.Println("[Server] Running in Lambda mode")
 		lambda.Start(s.handleLambdaRequest)
 	} else {
-		// Local server mode: Setup CORS dynamically and start the router
-		log.Println("[Server] Running in local server mode")
-		s.router.Use(s.setupCORS())
-		port := os.Getenv("PORT")
-		if port == "" {
-			port = "8080"
-		}
-		log.Printf("[Server] Server running on port %s", port)
-		s.router.Run(":" + port)
+		s.handleServerStart(port)
 	}
 }
 
@@ -120,6 +95,33 @@ func (s *Server) handleLambdaRequest(req events.APIGatewayProxyRequest) (events.
 	// No matching route
 	log.Printf("[Lambda] No handler found for: Method=%s Path=%s", req.HTTPMethod, req.Path)
 	return events.APIGatewayProxyResponse{StatusCode: http.StatusNotFound, Body: "Not Found"}, nil
+}
+
+func (s *Server) handleServerStart(port string) {
+	log.Println("[Server] Running in local server mode")
+	s.router.Use(s.setupCORS())
+
+	for _, route := range s.routes {
+		s.router.Handle(string(route.Method), route.Path, func(c *gin.Context) {
+			ctx := context.Background()
+			body, _ := c.GetRawData()
+			query := c.Request.URL.Query()
+
+			queryParams := make(map[string]string)
+			for key := range query {
+				queryParams[key] = query.Get(key)
+			}
+
+			statusCode, response := serveHTTPHandler(ctx, route.Handler, string(body), queryParams)
+			c.String(statusCode, response)
+		})
+	}
+
+	if port == "" {
+		port = "8080"
+	}
+	log.Printf("[Server] Server running on port %s", port)
+	s.router.Run(":" + port)
 }
 
 // optionsResponse generates the CORS response for OPTIONS requests
