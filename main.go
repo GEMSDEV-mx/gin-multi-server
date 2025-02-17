@@ -103,17 +103,25 @@ func (s *Server) handleServerStart(port string) {
 	s.router.Use(s.setupCORS())
 
 	for _, route := range s.routes {
+		// Create a closure for each route
 		s.router.Handle(string(route.Method), route.Path, func(c *gin.Context) {
 			ctx := context.Background()
 			body, _ := c.GetRawData()
 			query := c.Request.URL.Query()
 
+			// Convert query parameters to a map
 			queryParams := make(map[string]string)
 			for key := range query {
 				queryParams[key] = query.Get(key)
 			}
 
-			statusCode, response := serveHTTPHandler(ctx, route.Handler, string(body), queryParams)
+			// Convert request headers to a map (this now includes Accept-Language)
+			headers := make(map[string]string)
+			for key := range c.Request.Header {
+				headers[key] = c.Request.Header.Get(key)
+			}
+
+			statusCode, response := serveHTTPHandler(ctx, route.Handler, string(body), queryParams, headers)
 			c.String(statusCode, response)
 		})
 	}
@@ -131,7 +139,8 @@ func (s *Server) optionsResponse() events.APIGatewayProxyResponse {
 	headers := map[string]string{
 		"Access-Control-Allow-Origin":  "*",
 		"Access-Control-Allow-Methods": strings.Join(allowedMethods, ", "),
-		"Access-Control-Allow-Headers": "Content-Type, Authorization",
+		// Include Accept-Language in allowed headers
+		"Access-Control-Allow-Headers": "Content-Type, Authorization, Accept-Language",
 	}
 	log.Printf("[Lambda] Responding to OPTIONS with headers: %+v", headers)
 	return events.APIGatewayProxyResponse{
@@ -140,11 +149,13 @@ func (s *Server) optionsResponse() events.APIGatewayProxyResponse {
 	}
 }
 
-// serveHTTPHandler converts local requests to Lambda handler signature
-func serveHTTPHandler(ctx context.Context, handler HandlerFunction, body string, query map[string]string) (int, string) {
+// serveHTTPHandler converts local requests to Lambda handler signature,
+// now also including the headers.
+func serveHTTPHandler(ctx context.Context, handler HandlerFunction, body string, query map[string]string, headers map[string]string) (int, string) {
 	req := events.APIGatewayProxyRequest{
 		Body:                  body,
 		QueryStringParameters: query,
+		Headers:               headers,
 	}
 
 	response, err := handler(ctx, req)
@@ -156,12 +167,13 @@ func serveHTTPHandler(ctx context.Context, handler HandlerFunction, body string,
 	return response.StatusCode, response.Body
 }
 
-// setupCORS dynamically generates the CORS configuration
+// setupCORS dynamically generates the CORS configuration,
+// including Accept-Language in the allowed headers.
 func (s *Server) setupCORS() gin.HandlerFunc {
 	return cors.New(cors.Config{
 		AllowOrigins:     []string{"*"}, // Allow all origins
 		AllowMethods:     s.getAllowedMethods(),
-		AllowHeaders:     []string{"Content-Type", "Authorization"},
+		AllowHeaders:     []string{"Content-Type", "Authorization", "Accept-Language"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
