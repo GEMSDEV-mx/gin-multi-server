@@ -180,6 +180,11 @@ func (s *Server) setupCORS() gin.HandlerFunc {
 	})
 }
 
+// Router exposes the internal Gin engine for raw access.
+func (s *Server) Router() *gin.Engine {
+	return s.router
+}
+
 // getAllowedMethods returns the dynamically tracked allowed methods
 func (s *Server) getAllowedMethods() []string {
 	methods := []string{string(OPTIONS)} // OPTIONS is always allowed
