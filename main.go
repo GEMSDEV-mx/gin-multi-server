@@ -89,10 +89,16 @@ func (s *Server) handleLambdaRequest(req events.APIGatewayProxyRequest) (events.
 		return s.handleOptionsResponse(), nil
 	}
 
+	// Debug: list registered routes
+	for _, route := range s.routes {
+		log.Printf("[Lambda] Registered route: %s %s", route.Method, route.Path)
+	}
+
 	// Match routes dynamically
 	for _, route := range s.routes {
+		log.Printf("[Lambda] Checking route: %s %s against request %s %s", route.Method, route.Path, req.HTTPMethod, req.Path)
 		if matchPath(req.Path, route.Path) && strings.EqualFold(req.HTTPMethod, string(route.Method)) {
-			log.Printf("[Lambda] Handling request for: %s %s", route.Method, route.Path)
+			log.Printf("[Lambda] Matched route: %s %s", route.Method, route.Path)
 
 			// Extract path parameters from request
 			pathParams := extractPathParams(req.Path, route.Path)
@@ -107,25 +113,31 @@ func (s *Server) handleLambdaRequest(req events.APIGatewayProxyRequest) (events.
 	return events.APIGatewayProxyResponse{StatusCode: http.StatusNotFound, Body: "Not Found"}, nil
 }
 
-// Matches a request path against a registered route, handling path parameters
+// matchPath matches a request path against a registered route, handling path parameters
 func matchPath(requestPath, routePath string) bool {
 	requestParts := strings.Split(strings.Trim(requestPath, "/"), "/")
 	routeParts := strings.Split(strings.Trim(routePath, "/"), "/")
 
+	log.Printf("[matchPath] requestParts: %v, routeParts: %v", requestParts, routeParts)
+
 	if len(requestParts) != len(routeParts) {
+		log.Printf("[matchPath] segment count mismatch: %d vs %d", len(requestParts), len(routeParts))
 		return false
 	}
 
 	for i := range requestParts {
+		log.Printf("[matchPath] comparing segment %d: request='%s' route='%s'", i, requestParts[i], routeParts[i])
 		if routeParts[i] == "" || routeParts[i] == requestParts[i] || strings.HasPrefix(routeParts[i], ":") {
 			continue
 		}
+		log.Printf("[matchPath] segment %d mismatch", i)
 		return false
 	}
+	log.Printf("[matchPath] path '%s' matches route '%s'", requestPath, routePath)
 	return true
 }
 
-// Extracts path parameters from a request based on the route definition
+// extractPathParams extracts path parameters from a request based on the route definition
 func extractPathParams(requestPath, routePath string) map[string]string {
 	requestParts := strings.Split(strings.Trim(requestPath, "/"), "/")
 	routeParts := strings.Split(strings.Trim(routePath, "/"), "/")
@@ -135,6 +147,7 @@ func extractPathParams(requestPath, routePath string) map[string]string {
 		if strings.HasPrefix(routeParts[i], ":") {
 			paramName := strings.TrimPrefix(routeParts[i], ":")
 			params[paramName] = requestParts[i]
+			log.Printf("[extractPathParams] %s = %s", paramName, requestParts[i])
 		}
 	}
 	return params
@@ -169,6 +182,9 @@ func (s *Server) handleServerStart(port string) {
 				pathParams[param.Key] = param.Value
 			}
 
+			// Log local request details
+			log.Printf("[Local] %s %s body=%s query=%v headers=%v pathParams=%v", route.Method, route.Path, string(body), queryParams, headers, pathParams)
+
 			statusCode, response := serveHTTPHandler(ctx, route.Handler, string(body), queryParams, headers, pathParams)
 			c.String(statusCode, response)
 		})
@@ -181,7 +197,7 @@ func (s *Server) handleServerStart(port string) {
 	s.router.Run(":" + port)
 }
 
-// Generates a response for OPTIONS (CORS preflight requests)
+// handleOptionsResponse generates a response for OPTIONS (CORS preflight requests)
 func (s *Server) handleOptionsResponse() events.APIGatewayProxyResponse {
 	allowedMethods := s.getAllowedMethods()
 	headers := map[string]string{
@@ -195,7 +211,8 @@ func (s *Server) handleOptionsResponse() events.APIGatewayProxyResponse {
 		Headers:    headers,
 	}
 }
-// Serve HTTP request handler with path parameters
+
+// serveHTTPHandler serves HTTP request handler with path parameters
 func serveHTTPHandler(ctx context.Context, handler HandlerFunction, body string, query map[string]string, headers map[string]string, pathParams map[string]string) (int, string) {
 	req := events.APIGatewayProxyRequest{
 		Body:                  body,
@@ -224,7 +241,6 @@ func (s *Server) setupCORS() gin.HandlerFunc {
 		MaxAge:           12 * time.Hour,
 	})
 }
-
 
 // Router exposes the internal Gin engine for raw access.
 func (s *Server) Router() *gin.Engine {
