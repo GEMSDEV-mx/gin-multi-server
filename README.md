@@ -1,6 +1,6 @@
-# gin-lambda-server
+# gin-multi-server
 
-`gin-lambda-server` is a Go package that provides a blueprint for creating servers that can seamlessly run on both AWS Lambda and a traditional local server. This package is built on top of the Gin framework and includes features like dynamic routing, CORS handling, and more, making it easy to develop, test, and deploy applications across multiple environments.
+`gin-multi-server` lets the same handlers run on AWS Lambda or a traditional local Gin server. Lambda mode supports both API Gateway REST API (payload v1) and HTTP API (payload v2) events.
 
 ## Features
 
@@ -15,7 +15,7 @@
 Install the package using `go get`:
 
 ```bash
-go get github.com/yourusername/gin-lambda-server
+go get github.com/GEMSDEV-mx/gin-multi-server
 ```
 
 ## Usage
@@ -32,11 +32,11 @@ import (
 	"net/http"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/yourusername/gin-lambda-server"
+	server "github.com/GEMSDEV-mx/gin-multi-server"
 )
 
 func main() {
-	server := gin_lambda_server.NewServer()
+	s := server.NewServer()
 
 	// Define a handler
 	handler := func(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
@@ -47,19 +47,19 @@ func main() {
 	}
 
 	// Mount routes
-	server.MountEndpoint(gin_lambda_server.GET, "/hello", handler)
+	s.MountEndpoint(server.GET, "/hello", handler)
 
 	// Start the server
-	server.Serve()
+	s.Serve("8080")
 }
 ```
 
 ### Running Locally
 
-Set the `AWS_LAMBDA_FUNCTION_NAME` environment variable to an empty string or leave it unset to run the server in local mode. Use the `PORT` environment variable to specify the port (default is 8080).
+Set the `AWS_LAMBDA_FUNCTION_NAME` environment variable to an empty string or leave it unset to run the server in local mode. Pass an empty port to use the default, 8080.
 
 ```bash
-PORT=8080 go run main.go
+go run main.go
 ```
 
 ### Running on AWS Lambda
@@ -80,7 +80,7 @@ Mounts a new route to the server.
 - **`path`**: The URL path (e.g., `/example`).
 - **`handler`**: A function matching the `HandlerFunction` signature.
 
-### `Serve()`
+### `Serve(port string)`
 
 Starts the server. Automatically detects whether to run in Lambda mode or as a local server.
 
