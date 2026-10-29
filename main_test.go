@@ -60,6 +60,35 @@ func TestHandleLambdaEventSupportsHTTPAPIV2(t *testing.T) {
 	}
 }
 
+func TestV2ToV1RequestPreservesJWTAuthorizerClaims(t *testing.T) {
+	request := v2ToV1Request(events.APIGatewayV2HTTPRequest{
+		Version: "2.0",
+		RequestContext: events.APIGatewayV2HTTPRequestContext{
+			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: "GET", Path: "/api/templates"},
+			Authorizer: &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
+				JWT: &events.APIGatewayV2HTTPRequestContextAuthorizerJWTDescription{
+					Claims: map[string]string{
+						"sub":           "nich-admin:admin-1",
+						"nich_admin_id": "admin-1",
+						"scope":         "email.templates:read email.templates:send",
+					},
+					Scopes: []string{"email.templates:read", "email.templates:send"},
+				},
+			},
+		},
+	})
+
+	for name, want := range map[string]string{
+		"sub":           "nich-admin:admin-1",
+		"nich_admin_id": "admin-1",
+		"scope":         "email.templates:read email.templates:send",
+	} {
+		if got := request.RequestContext.Authorizer[name]; got != want {
+			t.Errorf("authorizer claim %q = %#v, want %q", name, got, want)
+		}
+	}
+}
+
 func TestHandleLambdaEventPreservesRESTAPIResponse(t *testing.T) {
 	server := NewServer()
 	server.MountEndpoint(GET, "/health", func(_ context.Context, _ events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
