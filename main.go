@@ -137,7 +137,7 @@ func v2ToV1Request(req events.APIGatewayV2HTTPRequest) events.APIGatewayProxyReq
 	if path == "" {
 		path = req.RequestContext.HTTP.Path
 	}
-	return events.APIGatewayProxyRequest{
+	request := events.APIGatewayProxyRequest{
 		HTTPMethod:            req.RequestContext.HTTP.Method,
 		Path:                  path,
 		Headers:               req.Headers,
@@ -146,6 +146,16 @@ func v2ToV1Request(req events.APIGatewayV2HTTPRequest) events.APIGatewayProxyReq
 		Body:                  req.Body,
 		IsBase64Encoded:       req.IsBase64Encoded,
 	}
+	if authorizer := req.RequestContext.Authorizer; authorizer != nil && authorizer.JWT != nil {
+		request.RequestContext.Authorizer = make(map[string]interface{}, len(authorizer.JWT.Claims)+1)
+		for name, value := range authorizer.JWT.Claims {
+			request.RequestContext.Authorizer[name] = value
+		}
+		if _, ok := request.RequestContext.Authorizer["scope"]; !ok && len(authorizer.JWT.Scopes) > 0 {
+			request.RequestContext.Authorizer["scope"] = strings.Join(authorizer.JWT.Scopes, " ")
+		}
+	}
+	return request
 }
 
 func v1ToV2Response(response events.APIGatewayProxyResponse) events.APIGatewayV2HTTPResponse {
